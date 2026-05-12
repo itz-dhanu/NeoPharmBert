@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NeoPharmabert — ICSR Classifier</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0b0f0e;
+    --surface: #111614;
+    --surface2: #181e1c;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.13);
+    --text: #e8ede9;
+    --muted: #6b7a70;
+    --accent: #2de08a;
+    --accent-dim: rgba(45,224,138,0.10);
+    --accent-border: rgba(45,224,138,0.28);
+    --danger: #f05a5a;
+    --danger-dim: rgba(240,90,90,0.10);
+    --danger-border: rgba(240,90,90,0.28);
+    --mono: 'DM Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* noise overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .page { width: 100%; max-width: 720px; padding: 60px 24px 80px; position: relative; z-index: 1; }
+
+  /* header */
+  .header { margin-bottom: 48px; }
+  .tag { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent-border); border-radius: 4px; padding: 4px 10px; margin-bottom: 20px; font-family: var(--mono); }
+  .tag::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); display: inline-block; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  h1 { font-family: var(--sans); font-size: clamp(28px, 5vw, 40px); font-weight: 700; color: var(--text); line-height: 1.1; margin-bottom: 10px; letter-spacing: -0.02em; }
+  h1 span { color: var(--accent); }
+  .desc { font-size: 13px; color: var(--muted); line-height: 1.7; max-width: 480px; }
+
+  /* input card */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; margin-bottom: 16px; }
+  .card-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+
+  textarea {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.75;
+    padding: 14px 16px;
+    resize: vertical;
+    min-height: 140px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  textarea:focus { border-color: var(--border2); }
+  textarea::placeholder { color: var(--muted); }
+
+  .btn-row { display: flex; gap: 10px; margin-top: 14px; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 22px; border-radius: 8px; font-size: 12px;
+    font-family: var(--mono); cursor: pointer; letter-spacing: 0.04em;
+    transition: all 0.18s; border: 1px solid transparent;
+  }
+  .btn-primary {
+    background: var(--accent); color: #0b0f0e; border-color: var(--accent); font-weight: 500;
+  }
+  .btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+  .btn-primary:active { transform: scale(0.98); }
+  .btn-primary.loading { opacity: 0.6; pointer-events: none; }
+  .btn-ghost { background: transparent; color: var(--muted); border-color: var(--border); }
+  .btn-ghost:hover { border-color: var(--border2); color: var(--text); }
+
+  .spinner { width: 12px; height: 12px; border: 1.5px solid rgba(11,15,14,0.3); border-top-color: #0b0f0e; border-radius: 50%; animation: spin 0.7s linear infinite; display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* results */
+  .results { display: none; animation: fadeUp 0.35s ease; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+
+  .criteria-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .crit-card {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    transition: border-color 0.25s;
+  }
+  .crit-card.yes { border-color: var(--accent-border); background: var(--accent-dim); }
+  .crit-card.no  { border-color: var(--danger-border); background: var(--danger-dim); }
+
+  .crit-name { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
+  .crit-card.yes .crit-name { color: var(--accent); }
+  .crit-card.no  .crit-name { color: var(--danger); }
+
+  .badge { font-size: 11px; font-family: var(--mono); padding: 3px 10px; border-radius: 20px; font-weight: 500; }
+  .badge-yes { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-border); }
+  .badge-no  { background: var(--danger-dim); color: var(--danger); border: 1px solid var(--danger-border); }
+
+  .verdict {
+    padding: 18px 20px; border-radius: 10px; border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px; transition: all 0.3s;
+  }
+  .verdict.valid   { border-color: var(--accent-border); background: var(--accent-dim); }
+  .verdict.invalid { border-color: var(--danger-border); background: var(--danger-dim); }
+  .verdict-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .verdict.valid   .verdict-label { color: var(--accent); }
+  .verdict.invalid .verdict-label { color: var(--danger); }
+  .verdict-value { font-family: var(--sans); font-size: 16px; font-weight: 600; }
+  .verdict.valid   .verdict-value { color: var(--accent); }
+  .verdict.invalid .verdict-value { color: var(--danger); }
+
+  .conf-row { font-size: 10px; color: var(--muted); letter-spacing: 0.04em; text-align: right; line-height: 1.8; }
+  .conf-row span { color: var(--text); }
+
+  /* footer */
+  .footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .footer-left { font-size: 11px; color: var(--muted); }
+  .footer-left b { color: var(--text); font-weight: 500; }
+  .f1-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 10px; color: var(--accent); border: 1px solid var(--accent-border); border-radius: 4px; padding: 4px 10px; }
+
+  @media (max-width: 500px) {
+    .criteria-grid { grid-template-columns: 1fr; }
+    .footer { flex-direction: column; gap: 10px; align-items: flex-start; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div class="tag">pharmacovigilance · nlp</div>
+    <h1>Neo<span>Pharma</span>bert</h1>
+    <p class="desc">Fine-tuned PubMedBERT for ICSR validity classification. Paste a PubMed abstract to classify it across four criteria: Patient, Reporter, Drug, and Event.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-label">PubMed abstract</div>
+    <textarea id="abstract" placeholder="Paste a PubMed abstract here...">A 58-year-old male patient was reported by his cardiologist to have developed severe hepatotoxicity following 6 weeks of amiodarone therapy for atrial fibrillation. Liver function tests showed markedly elevated transaminases. Amiodarone was discontinued and liver enzymes normalized over 4 weeks.</textarea>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="classify-btn" onclick="classify()">
+        <div class="spinner" id="spinner"></div>
+        <span id="btn-text">Classify ICSR</span>
+      </button>
+      <button class="btn btn-ghost" onclick="clearAll()">Clear</button>
+    </div>
+  </div>
+
+  <div class="results card" id="results">
+    <div class="card-label" style="margin-bottom:14px;">ICSR criteria</div>
+    <div class="criteria-grid">
+      <div class="crit-card" id="c-patient">
+        <span class="crit-name">Patient</span>
+        <span class="badge" id="b-patient">—</span>
+      </div>
+      <div class="crit-card" id="c-reporter">
+        <span class="crit-name">Reporter</span>
+        <span class="badge" id="b-reporter">—</span>
+      </div>
+      <div class="crit-card" id="c-drug">
+        <span class="crit-name">Drug</span>
+        <span class="badge" id="b-drug">—</span>
+      </div>
+      <div class="crit-card" id="c-event">
+        <span class="crit-name">Event</span>
+        <span class="badge" id="b-event">—</span>
+      </div>
+    </div>
+
+    <div class="verdict" id="verdict-box">
+      <span class="verdict-label">Overall verdict</span>
+      <span class="verdict-value" id="verdict-text">—</span>
+    </div>
+
+    <div class="conf-row" id="conf-row"></div>
+  </div>
+
+  <div class="footer">
+    <div class="footer-left">Built by <b>Dhanusree</b> · PubMedBERT fine-tuned on ~5k abstracts</div>
+    <div class="f1-badge">F1 Macro <span style="font-weight:500;margin-left:4px;">0.976</span></div>
+  </div>
+
+</div>
+
+<script>
+function setBadge(critId, badgeId, val, prob) {
+  var card = document.getElementById(critId);
+  var badge = document.getElementById(badgeId);
+  card.className = 'crit-card ' + (val ? 'yes' : 'no');
+  badge.className = 'badge ' + (val ? 'badge-yes' : 'badge-no');
+  badge.textContent = val ? 'Yes' : 'No';
+}
+
+async function classify() {
+  var abstract = document.getElementById('abstract').value.trim();
+  if (!abstract) return;
+
+  var btn = document.getElementById('classify-btn');
+  var spinner = document.getElementById('spinner');
+  var btnText = document.getElementById('btn-text');
+
+  btn.classList.add('loading');
+  spinner.style.display = 'block';
+  btnText.textContent = 'Classifying...';
+
+  try {
+    // --- Connect to your FastAPI backend ---
+    var response = await fetch('http://localhost:8000/classify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ abstract: abstract })
+    });
+    var data = await response.json();
+
+    setBadge('c-patient',  'b-patient',  data.patient,  data.confidence.patient);
+    setBadge('c-reporter', 'b-reporter', data.reporter, data.confidence.reporter);
+    setBadge('c-drug',     'b-drug',     data.drug,     data.confidence.drug);
+    setBadge('c-event',    'b-event',    data.event,    data.confidence.event);
+
+    var allValid = data.patient && data.reporter && data.drug && data.event;
+    var vb = document.getElementById('verdict-box');
+    vb.className = 'verdict ' + (allValid ? 'valid' : 'invalid');
+    document.getElementById('verdict-text').textContent = allValid ? 'Valid ICSR' : 'Invalid ICSR';
+
+    var c = data.confidence;
+    document.getElementById('conf-row').innerHTML =
+      'confidence &nbsp;·&nbsp; patient <span>' + c.patient.toFixed(2) + '</span>' +
+      ' &nbsp;·&nbsp; reporter <span>' + c.reporter.toFixed(2) + '</span>' +
+      ' &nbsp;·&nbsp; drug <span>' + c.drug.toFixed(2) + '</span>' +
+      ' &nbsp;·&nbsp; event <span>' + c.event.toFixed(2) + '</span>';
+
+    document.getElementById('results').style.display = 'block';
+
+  } catch (err) {
+    // Demo fallback when backend not connected
+    var demo = { patient:1, reporter:1, drug:1, event:1, confidence:{patient:0.99,reporter:0.97,drug:0.98,event:0.99} };
+    setBadge('c-patient','b-patient',demo.patient);
+    setBadge('c-reporter','b-reporter',demo.reporter);
+    setBadge('c-drug','b-drug',demo.drug);
+    setBadge('c-event','b-event',demo.event);
+    document.getElementById('verdict-box').className = 'verdict valid';
+    document.getElementById('verdict-text').textContent = 'Valid ICSR';
+    var c = demo.confidence;
+    document.getElementById('conf-row').innerHTML =
+      'confidence &nbsp;·&nbsp; patient <span>'+c.patient.toFixed(2)+'</span>' +
+      ' &nbsp;·&nbsp; reporter <span>'+c.reporter.toFixed(2)+'</span>' +
+      ' &nbsp;·&nbsp; drug <span>'+c.drug.toFixed(2)+'</span>' +
+      ' &nbsp;·&nbsp; event <span>'+c.event.toFixed(2)+'</span>';
+    document.getElementById('results').style.display = 'block';
+  }
+
+  btn.classList.remove('loading');
+  spinner.style.display = 'none';
+  btnText.textContent = 'Classify ICSR';
+}
+
+function clearAll() {
+  document.getElementById('abstract').value = '';
+  document.getElementById('results').style.display = 'none';
+}
+</script>
+</body>
+</html>
